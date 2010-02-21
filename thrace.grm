@@ -1,0 +1,42 @@
+%name Thrace;
+
+%defs (
+(* TODO: datatype for pos pairs *)
+  datatype exp = Id of string
+               | Int of LargeInt.int
+               | String of string
+               | Float of (LargeInt.int * LargeInt.int)
+               | Sexpr of exp list
+);
+
+%tokens : ID of string
+        | INT of LargeInt.int
+        | STRING of string
+        | FLOAT of (LargeInt.int * LargeInt.int) (* {pos, digits, exp}? *)
+        | LPAREN
+        | RPAREN
+        | LBRACK
+        | RBRACK
+        | DOT (* provide improper lists? *)
+        | QUOTE
+        | QUASIQUOTE
+        | UNQUOTE
+        | COMMENT (* #; *);
+
+%start prog;
+
+prog : explist;
+
+exp : LPAREN explist RPAREN => (Sexpr explist)
+    | LBRACK explist RBRACK => (Sexpr explist)
+    | ID => (Id ID)
+    | INT => (Int INT)
+    | FLOAT => (Float FLOAT)
+    | STRING => (String STRING)
+    | QUOTE exp => (Sexpr [Id "quote", exp])
+    | QUASIQUOTE exp => (Sexpr [Id "quasiquote", exp])
+    | UNQUOTE exp => (Sexpr [Id "unquote", exp]);
+
+explist : => ([])
+        | COMMENT exp explist => (explist)
+        | exp explist => (exp :: explist);
