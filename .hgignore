@@ -1,3 +1,5 @@
 syntax: glob
 .cm/*
 *.swp
+thrace.lex.sml
+thrace.grm.sml
