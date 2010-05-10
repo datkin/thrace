@@ -2,41 +2,42 @@
 
 %defs (
 (* TODO: datatype for pos pairs *)
-  datatype exp = Id of string
-               | Int of LargeInt.int
-               | String of string
-               | Float of (LargeInt.int * LargeInt.int)
-               | Sexpr of exp list
+open AST
 );
 
 %tokens : ID of string
         | INT of LargeInt.int
         | STRING of string
-        | FLOAT of (LargeInt.int * LargeInt.int) (* {pos, digits, exp}? *)
+        | FLOAT of (LargeInt.int * LargeInt.int)
+        | RATIONAL of (LargeInt.int * LargeInt.int)
         | LPAREN
         | RPAREN
         | LBRACK
         | RBRACK
-        | DOT (* provide improper lists? *)
         | QUOTE
         | QUASIQUOTE
         | UNQUOTE
-        | COMMENT (* #; *);
+        | COMMENT (* #; *)
+        (* ml-antlr bug: All token cases are covered in the grammar, but antlr emits a _ case anyway? *)
+        | FOO;
 
 %start prog;
 
 prog : explist;
 
-exp : LPAREN explist RPAREN => (Sexpr explist)
-    | LBRACK explist RBRACK => (Sexpr explist)
-    | ID => (Id ID)
-    | INT => (Int INT)
-    | FLOAT => (Float FLOAT)
-    | STRING => (String STRING)
-    | QUOTE exp => (Sexpr [Id "quote", exp])
-    | QUASIQUOTE exp => (Sexpr [Id "quasiquote", exp])
-    | UNQUOTE exp => (Sexpr [Id "unquote", exp]);
-
 explist : => ([])
         | COMMENT exp explist => (explist)
         | exp explist => (exp :: explist);
+
+exp : LPAREN explist RPAREN => (Sexp (explist, FULL_SPAN))
+    | LBRACK explist RBRACK => (Sexp (explist, FULL_SPAN))
+    | ID => (Id (Id.id ID, ID_SPAN))
+    | num => (Num (num, FULL_SPAN))
+    | STRING => (String (STRING, STRING_SPAN))
+    | QUOTE exp => (Sexp ([Id (Id.id "quote", QUOTE_SPAN), exp], FULL_SPAN))
+    | QUASIQUOTE exp => (Sexp ([Id (Id.id "quasiquote", QUASIQUOTE_SPAN), exp], FULL_SPAN))
+    | UNQUOTE exp => (Sexp ([Id (Id.id "unquote", UNQUOTE_SPAN), exp], FULL_SPAN));
+
+num : INT => (Int INT)
+    | FLOAT => (Float FLOAT)
+    | RATIONAL => (Rational RATIONAL);

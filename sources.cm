@@ -1,8 +1,13 @@
 Group is
 
+ast.sml
+(* hoopl.sml *)
+id.sml
 thrace.grm.sml (* thrace.grm *)
 thrace.lex.sml (* thrace.lex *)
 parse.sml (* move to parse.sml *)
+syntax-rules.sml
+util.sml
 $/basis.cm
 $/smlnj-lib.cm
 $/ml-lpt-lib.cm
