@@ -257,7 +257,75 @@ fun parseTemplate (AST.Id (id, _), binders, level) =
 *)
 
 (* TODO: is there some way to encode in the type that this should be a "full" tree? *)
-datatype binding = List of int * binding list (* cache the length *)
+datatype binding = Nested of int * binding list (* cache the length *)
                  | Binding of AST.exp
+                 | NoBinding
+
+fun bindingToStr NoBinding = "Nothing"
+  | bindingToStr (Binding ast) = AST.toString ast
+  | bindingToStr (Nested (_, bindings)) = "[" ^ String.concatWith ", " (map bindingToStr bindings) ^ "]"
+
+fun matchToBindings match =
+    case match of
+      MConst => Id.IdMap.empty
+    | MVar (id, ast) => Id.IdMap.singleton (id, Binding ast)
+    | MList (matches, mtail) =>
+      let
+        fun mergeBindings (id, binding1, binding2) =
+            raise Fail ("Id " ^ Id.name id ^ " bound more than once?")
+
+        (* Implementing this might be a bit easier if we had a list of
+         * the bound vars in a sequence ahead of time, because then we
+         * would merely have to add an empty Nested instance for each
+         * of them to our *base* binding, and we'd be guaranteed that
+         * every union would cause a collision that could resolve. *)
+        fun raiseBinding binding = Nested (1, [binding])
+
+        fun mergeRaised (_, Nested (n1, b1), Nested (n2, b2)) = Nested (n1 + n2, b1 @ b2)
+          | mergeRaised (id, _, _) = raise Fail ("Cannot merge non-nested bindings for Id " ^ Id.name id)
+
+        fun matchesToBindings matches =
+            foldl (fn (match, bindings) =>
+                      Id.IdMap.unionWithi mergeBindings
+                                          (bindings,
+                                           (matchToBindings match)))
+                  Id.IdMap.empty
+                  matches
+
+        fun mtailToBindings mtail =
+            case mtail of
+              MEnd => Id.IdMap.empty
+            | MRest match => matchToBindings match
+            | MSeq (seq, matches) => let
+                val raisedBindings = map (Id.IdMap.map raiseBinding)
+                                         (map matchToBindings seq)
+                val seqBindings = foldl (fn (source, target) =>
+                                            Id.IdMap.unionWithi mergeRaised
+                                                                (target, source))
+                                        Id.IdMap.empty
+                                        raisedBindings
+                val matchBindings = matchesToBindings matches
+              in
+                Id.IdMap.unionWithi mergeBindings (seqBindings, matchBindings)
+              end
+
+        val bindings = matchesToBindings matches
+        val bindings' = mtailToBindings mtail
+      in
+        Id.IdMap.unionWithi mergeBindings (bindings, bindings')
+      end
+
+(* Testing:
+ val ast = hd (Parser.getAst (Parser.read ()));
+     ((a ... b) ...)
+
+ val pattern = SyntaxRules.parsePattern (ast, []);
+ val ast = hd (Parser.getAst (Parser.read ()));
+     ((1 2 3) (4 5 6))
+
+ val match = SyntaxRules.matchPattern (pattern, ast);
+ val bindings = matchToBindings match;
+ val _ = Id.dump (bindings, SyntaxRules.bindingToStr);
+*)
 
 end
