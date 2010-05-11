@@ -328,4 +328,66 @@ fun matchToBindings match =
  val _ = Id.dump (bindings, SyntaxRules.bindingToStr);
 *)
 
+val dummy_span : AST.span = (0, 0)
+
+fun expand (template, bindings) =
+    case template of
+      TConst (Id id) => AST.Id (id, dummy_span)
+    | TConst (Num num) => AST.Num (num, dummy_span)
+    | TVar id => (case Id.IdMap.find (bindings, id) of
+                   NONE => raise Fail ("Id " ^ Id.name id ^ " not bound.")
+                 | SOME (NoBinding) => raise Fail ("Id " ^ Id.name id ^ " not bound enough times!")
+                 | SOME (Nested _) => raise Fail ("Id " ^ Id.name id ^ " not nestsed deeply enough.")
+                 | SOME (Binding ast) => ast) (* TODO: rewrite span? *)
+    | TList titems =>
+      let
+        fun expandTItem (TOnce template, bindings) = [expand (template, bindings)]
+          | expandTItem (TRepeat (titem, ids), bindings) =
+            let
+              (* Find the id which occurs the most times at this level and use that as
+               * number of times to iterate. All other ideas should be equally numerous
+               * or not get used! *)
+              val limit = Id.IdSet.foldl (fn (id, limit) =>
+                                             case Id.IdMap.find (bindings, id) of
+                                               SOME (Nested (n, _)) => if n > limit then n else limit
+                                             | _ => limit)
+                                         0
+                                         ids
+
+              fun liftBinding n (Nested (_, bindings)) =
+                  (List.nth (bindings, n)
+                   handle Subscript => NoBinding)
+                | liftBinding n binding = binding
+
+            in
+              List.concat (List.tabulate (limit,
+                                          (fn n => expandTItem (titem, Id.IdMap.map (liftBinding n)
+                                                                                    bindings))))
+            end
+
+        val items = List.concat (map (fn titem => expandTItem (titem, bindings))
+                                    titems)
+      in
+        AST.Sexp (items, dummy_span)
+      end
+
+fun makeTransformer patternForm templateForm ast =
+    let
+      val literals = []
+      val pattern = parsePattern (patternForm, literals)
+      val binders = getBinders (pattern, Id.IdMap.empty, 0)
+      val (template, _) = parseTemplate (templateForm, binders, 0)
+      val match = matchPattern (pattern, ast)
+      val bindings = matchToBindings match
+    in
+      expand (template, bindings)
+    end
+
+(* Testing:
+ fun read () = hd (Parser.getAst (Parser.read ()));
+ val ast = SyntaxRules.makeTranformer (read ()) (read ()) (read ())
+ val _ = AST.toString ast
+*)
+
+
 end
