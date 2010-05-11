@@ -16,84 +16,6 @@ datatype pattern =
        | PRest of pattern
        | PEnd
 
-datatype match =
-         MList of match list *
-                  mtail
-       | MVar of Id.id * AST.exp
-       | MConst
-
-     and mtail =
-         MSeq of match list *
-                 match list
-       | MRest of match
-       | MEnd
-
-(* Every time we recur on a repeat, we pass the environment down, but for any N-dimensional identifier, we
- * select one element of from the top dimension and bring it the top (ie, stripping away all the other
- * top level elements, eg:
- * (a: (((1 2 3) (4 5 6)) ((1 2) (4))), b: ((1 2) (3 4)) c: (1 2 3) d: 4), recur on 2, gives
- * (a: ((1 2) (4)), b: (3 4), c: -, d: 4?) - in otherwords, if c ends up being used in a pattern,
- * then there just weren't enough c's to go around and this is an error on the users part.
- * So how do we know on what index to stop recurring? *)
-
-(* We need to carry around a binding environment? *)
-(* Each variables has some nesting level, so for instance
- * (a ...) would mean a is singly nested,
- * whereas ((a ...) ...) would mean a is doubly nested,
- * and any occurence of a in the pattern needs to be
- * "bound" by _two_ ellipses. *)
-fun matchPattern (PConst (Num n), AST.Num (n', _)) = if n = n' then MConst else raise Fail "not num const"
-  | matchPattern (PConst (Id id), AST.Id (id', _)) = if id = id' then MConst else raise Fail "not id const"
-  | matchPattern (PVar id, ast) = MVar (id, ast)
-  | matchPattern (PList (patterns, ptail), AST.Sexp (asts, span)) =
-    let
-      val limit = length patterns
-
-      fun split (ast, (n, head, tail)) =
-          if n < limit then
-            (n + 1, head @ [ast], tail)
-          else
-            (n + 1, head, tail @ [ast])
-
-      val (_, head, tail) = foldl split (0, [], []) asts
-
-      fun matchPatterns (patterns, asts) =
-          ListPair.foldlEq (fn (pattern, ast, matches) =>
-                               matchPattern (pattern, ast) :: matches)
-                           []
-                           (patterns, asts)
-
-      fun matchTail (PEnd, []) = MEnd
-        | matchTail (PRest pattern, ast) = MRest (matchPattern (pattern, AST.Sexp (ast, span)))
-        | matchTail (PSeq (pattern, patterns), asts) =
-          let
-            val limit = length patterns
-
-            fun split (ast, (n, head, tail)) =
-                if n < limit then
-                  (n + 1, head, ast :: tail)
-                else
-                  (n + 1, ast :: head, tail)
-
-            val (_, head, tail) = foldr split (0, [], []) asts
-          in
-            MSeq (map (fn ast => matchPattern (pattern, ast))
-                      head,
-                  matchPatterns (patterns, tail))
-          end
-        | matchTail _ = raise Fail "Could not match tail!"
-    in
-      MList (matchPatterns (patterns, head),
-             matchTail (ptail, tail))
-    end
-  | matchPattern (_, _) = raise Fail "didn't match!"
-
-(* Testing:
- val pattern = SyntaxRules.parsePattern (hd (Parser.getAst (Parser.read ())), []);
- val ast = hd (Parser.getAst (Parser.read ()));
- val match = SyntaxRules.matchPattern (pattern, ast);
-*)
-
 fun isEllipsis (AST.Id (id, _)) = id = Id.id "..."
   | isEllipsis _ = false
 
@@ -184,6 +106,84 @@ fun getBinders (pattern, binders, level) =
 
  val binders = SyntaxRules.getBinders (pattern, Id.IdMap.empty, 0);
  a: 0, b: 0, c: 1, d: 3
+*)
+
+datatype match =
+         MList of match list *
+                  mtail
+       | MVar of Id.id * AST.exp
+       | MConst
+
+     and mtail =
+         MSeq of match list *
+                 match list
+       | MRest of match
+       | MEnd
+
+(* Every time we recur on a repeat, we pass the environment down, but for any N-dimensional identifier, we
+ * select one element of from the top dimension and bring it the top (ie, stripping away all the other
+ * top level elements, eg:
+ * (a: (((1 2 3) (4 5 6)) ((1 2) (4))), b: ((1 2) (3 4)) c: (1 2 3) d: 4), recur on 2, gives
+ * (a: ((1 2) (4)), b: (3 4), c: -, d: 4?) - in otherwords, if c ends up being used in a pattern,
+ * then there just weren't enough c's to go around and this is an error on the users part.
+ * So how do we know on what index to stop recurring? *)
+
+(* We need to carry around a binding environment? *)
+(* Each variables has some nesting level, so for instance
+ * (a ...) would mean a is singly nested,
+ * whereas ((a ...) ...) would mean a is doubly nested,
+ * and any occurence of a in the pattern needs to be
+ * "bound" by _two_ ellipses. *)
+fun matchPattern (PConst (Num n), AST.Num (n', _)) = if n = n' then MConst else raise Fail "not num const"
+  | matchPattern (PConst (Id id), AST.Id (id', _)) = if id = id' then MConst else raise Fail "not id const"
+  | matchPattern (PVar id, ast) = MVar (id, ast)
+  | matchPattern (PList (patterns, ptail), AST.Sexp (asts, span)) =
+    let
+      val limit = length patterns
+
+      fun split (ast, (n, head, tail)) =
+          if n < limit then
+            (n + 1, head @ [ast], tail)
+          else
+            (n + 1, head, tail @ [ast])
+
+      val (_, head, tail) = foldl split (0, [], []) asts
+
+      fun matchPatterns (patterns, asts) =
+          ListPair.foldlEq (fn (pattern, ast, matches) =>
+                               matchPattern (pattern, ast) :: matches)
+                           []
+                           (patterns, asts)
+
+      fun matchTail (PEnd, []) = MEnd
+        | matchTail (PRest pattern, ast) = MRest (matchPattern (pattern, AST.Sexp (ast, span)))
+        | matchTail (PSeq (pattern, patterns), asts) =
+          let
+            val limit = length patterns
+
+            fun split (ast, (n, head, tail)) =
+                if n < limit then
+                  (n + 1, head, ast :: tail)
+                else
+                  (n + 1, ast :: head, tail)
+
+            val (_, head, tail) = foldr split (0, [], []) asts
+          in
+            MSeq (map (fn ast => matchPattern (pattern, ast))
+                      head,
+                  matchPatterns (patterns, tail))
+          end
+        | matchTail _ = raise Fail "Could not match tail!"
+    in
+      MList (matchPatterns (patterns, head),
+             matchTail (ptail, tail))
+    end
+  | matchPattern (_, _) = raise Fail "didn't match!"
+
+(* Testing:
+ val pattern = SyntaxRules.parsePattern (hd (Parser.getAst (Parser.read ())), []);
+ val ast = hd (Parser.getAst (Parser.read ()));
+ val match = SyntaxRules.matchPattern (pattern, ast);
 *)
 
 datatype template =
@@ -388,6 +388,5 @@ fun makeTransformer patternForm templateForm ast =
  val ast = SyntaxRules.makeTranformer (read ()) (read ()) (read ())
  val _ = AST.toString ast
 *)
-
 
 end
