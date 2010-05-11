@@ -28,21 +28,12 @@ datatype match =
        | MRest of match
        | MEnd
 
-datatype template =
-         (* Do we need to support imporper tails? I'm not convinced yet. *)
-         TList of titem list
-       | TVar of Id.id
-       | TConst of const
-
-     and titem =
-         TRepeat of template
-       | TOnce of template
-
 (* Every time we recur on a repeat, we pass the environment down, but for any N-dimensional identifier, we
  * select one element of from the top dimension and bring it the top (ie, stripping away all the other
  * top level elements, eg:
  * (a: (((1 2 3) (4 5 6)) ((1 2) (4))), b: ((1 2) (3 4)) c: (1 2 3) d: 4), recur on 2, gives
- * (a: ((1 2) (4)), b: (3 4), c: -, d: 4?)
+ * (a: ((1 2) (4)), b: (3 4), c: -, d: 4?) - in otherwords, if c ends up being used in a pattern,
+ * then there just weren't enough c's to go around and this is an error on the users part.
  * So how do we know on what index to stop recurring? *)
 
 (* We need to carry around a binding environment? *)
@@ -103,6 +94,9 @@ fun matchPattern (PConst (Num n), AST.Num (n', _)) = if n = n' then MConst else 
  val match = SyntaxRules.matchPattern (pattern, ast);
 *)
 
+fun isEllipsis (AST.Id (id, _)) = id = Id.id "..."
+  | isEllipsis _ = false
+
 (* TODO: ensure variables only occur once within the pattern *)
 fun parsePattern (ast, literals) =
     let
@@ -110,9 +104,6 @@ fun parsePattern (ast, literals) =
 
       fun isDot (AST.Id (id, _)) = id = Id.id "."
         | isDot _ = false
-
-      fun isEllipsis (AST.Id (id, _)) = id = Id.id "..."
-        | isEllipsis _ = false
 
       fun parse ast = parsePattern (ast, literals)
 
@@ -195,8 +186,78 @@ fun getBinders (pattern, binders, level) =
  a: 0, b: 0, c: 1, d: 3
 *)
 
-(*
-fun parseTemplate (ast, binders, level) =
-    ...
+datatype template =
+         (* Do we need to support imporper tails? I'm not convinced yet. *)
+         TList of titem list
+       | TVar of Id.id
+       | TConst of const
+
+     and titem =
+         (* the identifier is a hint for the id that's being looped over *)
+         TRepeat of titem * Id.IdSet.set
+       | TOnce of template
+
+datatype item_parse = Done
+                    | Item of titem * AST.exp list * Id.IdSet.set
+
+fun parseTemplate (AST.Id (id, _), binders, level) =
+    (case Id.IdMap.find (binders, id) of
+       NONE => (TConst (Id id), Id.IdSet.empty)
+     (* An id must appear at or *past* it's level of nesting! *)
+     | SOME level' => if level < level' then
+                        raise Fail ("Id " ^ (Id.name id) ^ " not nested deeply enough!")
+                      else
+                        (* The option represents the most deeply nested id appearing in the expr? *)
+                        (TVar id, Id.IdSet.singleton id))
+  | parseTemplate (AST.Num (num, _), _, _) = (TConst (Num num), Id.IdSet.empty)
+  | parseTemplate (AST.Sexp (asts, _), binders, level) =
+    let
+      (* Parse from right to left? *)
+      (* Return an item and the rest of the asts *)
+      fun parseTItem ([], _) = Done
+        | parseTItem (ast :: rest, level) =
+          if isEllipsis ast then
+            case parseTItem (rest, level + 1) of
+              Done => raise Fail "... must come after a template"
+            | Item (item, rest, ids) => Item (TRepeat (item, ids), rest, ids)
+          else
+            let
+              val (template, ids) = parseTemplate (ast, binders, level)
+            in
+              Item (TOnce template, rest, ids)
+            end
+
+      fun parseTList (asts, level, items, ids) =
+          case parseTItem (asts, level) of
+            Done => (items, ids)
+          | Item (item, rest, ids') => parseTList (rest, level, item :: items, Id.IdSet.union (ids, ids'))
+
+      val (items, ids) = parseTList ((rev asts), level, [], Id.IdSet.empty)
+    in
+      (TList items, ids)
+    end
+  | parseTemplate (AST.String _, _, _) = raise Fail "Strings not supported in templates"
+
+(* Testing:
+ val ast = hd (Parser.getAst (Parser.read ()));
+     (a (b ...) (c ...))
+
+ val binders = SyntaxRules.getBinders (pattern, Id.IdMap.empty, 0);
+
+ val ast = hd (Parser.getAst (Parser.read ()));
+     ((b c) ... a)
+
+ val template = SyntaxRules.parseTemplate (ast, binders, 0);
+
+ Other templates to try:
+   (a ...) w/ ((a ...) (a ...))
+           w/ (a a ...) (should fail)
+           w/ (foo a ...)
+           w/ (foo a ... ...)
 *)
+
+(* TODO: is there some way to encode in the type that this should be a "full" tree? *)
+datatype binding = List of int * binding list (* cache the length *)
+                 | Binding of AST.exp
+
 end

@@ -4,6 +4,7 @@ val compare = Int.compare
 
 structure StringMap = BinaryMapFn(type ord_key = string val compare = String.compare)
 structure IdMap = BinaryMapFn(type ord_key = id val compare = compare)
+structure IdSet = BinarySetFn(type ord_key = id val compare = compare)
 
 val nextId = ref 0
 val ids : id StringMap.map ref = ref StringMap.empty
