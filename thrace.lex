@@ -1,8 +1,8 @@
 %name ThraceLexer;
 
 %let digit = [0-9];
-%let alpha = [\033 \036-\038 \042-\043 \045-\058 \060-\090 \092 \094 \095 \097-\126]; (* printable ascii characters that aren't reserved *)
-%let alphaExt = [\033 \036-\039 \042-\043 \045-\058 \060-\090 \092 \094 \095 \097-\126]; (* printable ascii including quote, \039 *)
+%let alpha = [\033\036-\038\042-\043\045-\058\060-\090\092\094\095\097-\126]; (* printable ascii characters that aren't reserved *)
+%let alphaExt = [\033\036-\039\042-\043\045-\058\060-\090\092\094\095\097-\126]; (* printable ascii including quote, \039 *)
 
 %defs (
   open ThraceTokens;
