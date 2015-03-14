@@ -1,0 +1,1 @@
+Thrace ~~is~~ will be a functional, statically typed programming language with Scheme-like syntax.
